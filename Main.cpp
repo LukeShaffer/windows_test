@@ -6,7 +6,6 @@
 #include <cstdio>
 #include <math.h>
 #include <ctime>
-#include <functional> //std::ref
 //#include <random> //std::default_random_engine
 
 
@@ -20,10 +19,15 @@ HWND activeWindow;
 HWND createdWindow;
 UINT uACToggle;
 bool clickingLoop = false;
-std::thread clickingThread;
+// Old implementation with pthreads through mingw
+// std::thread clickingThread;
+HANDLE clickingThread;
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine, int CmdShow)
-{
+int WINAPI WinMain(
+    HINSTANCE hInstance,
+    HINSTANCE hPrevInstance,
+    LPSTR pCmdLine,
+    int CmdShow) {
 
     srand(time(0));
 
@@ -36,27 +40,35 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine,
 
     RegisterClass(&wc);
 
-    HWND hwnd = CreateWindowEx(WS_EX_CLIENTEDGE,CLASS_NAME,L"Hotkey Window", WS_OVERLAPPEDWINDOW |WS_HSCROLL |WS_VSCROLL,
-                               0,0,250,250,
-                               NULL,NULL, hInstance, NULL);
-    createdWindow = hwnd;
+    createdWindow = CreateWindowEx(
+        WS_EX_CLIENTEDGE,   // dwExStyle
+        CLASS_NAME,         // lpClassName
+        L"Hotkey Window",   // lpWindowName
+        WS_OVERLAPPEDWINDOW |WS_HSCROLL |WS_VSCROLL,    // dwStyle
+        0,0,250,250,    // x, y, width, height
+        NULL,   // hWndParent
+        NULL,   // hMenu
+        hInstance, // hInstance
+        NULL    // lpParam
+    );
 
-    if(hwnd ==NULL){
+    if(createdWindow == NULL){
         return -1;
     }
 
-    HINSTANCE hInst = (HINSTANCE)GetWindowLong( hwnd, GWL_HINSTANCE );
+    HINSTANCE hInst = (HINSTANCE)GetWindowLong(createdWindow, GWL_HINSTANCE );
 
     //hotkey section
-    RegisterHotKey(hwnd,1,MOD_ALT|0x4000, VK_UP);       //On top key
-    RegisterHotKey(hwnd,2,MOD_ALT|0x4000,VK_DOWN);      //Not on top
-    RegisterHotKey(hwnd,3,MOD_ALT|0x4000,VK_ADD);       //make window more opaque
-    RegisterHotKey(hwnd,4,MOD_ALT|0x4000,VK_SUBTRACT);  //make window more transparent
-    RegisterHotKey(hwnd,5,MOD_ALT|0x4000,VK_BACK);      //Set Window to 100% opaque
-    RegisterHotKey(hwnd,6,MOD_ALT|0x4000,0x51);         //Enter wasd mode, 0x51 is 'q'
-    RegisterHotKey(hwnd,7,MOD_ALT|0x4000,0x4c);         //Select Scroll Lock Window, 0x4C is 'L'
-    RegisterHotKey(hwnd,8,MOD_ALT|0x4000,0x45);         //Toggle Auto Clicker, 0x45 is 'e'
+    RegisterHotKey(createdWindow,1,MOD_ALT|0x4000,VK_UP);        //On top key
+    RegisterHotKey(createdWindow,2,MOD_ALT|0x4000,VK_DOWN);      //Not on top
+    RegisterHotKey(createdWindow,3,MOD_ALT|0x4000,VK_ADD);       //make window more opaque
+    RegisterHotKey(createdWindow,4,MOD_ALT|0x4000,VK_SUBTRACT);  //make window more transparent
+    RegisterHotKey(createdWindow,5,MOD_ALT|0x4000,VK_BACK);      //Set Window to 100% opaque
+    RegisterHotKey(createdWindow,6,MOD_ALT|0x4000,0x51);         //Enter wasd mode, 0x51 is 'q'
+    RegisterHotKey(createdWindow,7,MOD_ALT|0x4000,0x4c);         //Select Scroll Lock Window, 0x4C is 'L'
+    RegisterHotKey(createdWindow,8,MOD_ALT|0x4000,0x45);         //Toggle Auto Clicker, 0x45 is 'e'
 
+    // control vars for various hotkeys
     bool layerFlag = false;
     int opacity = 100;
     bool wasd = false;
@@ -71,7 +83,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine,
 
 
     // disable showing the window
-    //ShowWindow(hwnd,CmdShow);
+    //ShowWindow(createdWindow, CmdShow);
 
     MSG msg = {};
     BOOL msgSuc = 1;
@@ -82,15 +94,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine,
             //handle errors, I'll add this later
         }
 
+        // any of my registered hotkeys have been pressed
         else if (msg.message == WM_HOTKEY){
-            HotKeyProcess(msg,opacity,
-                       layerFlag,wasd,mouseHooked,autoClickMode,
-                       hInst,mouseWindow);
+            HotKeyProcess(msg, opacity, layerFlag, wasd, mouseHooked,
+                autoClickMode, hInst, mouseWindow);
         }
+        // debug, print if the created window (hidden) was scrolled on
         else{
             if(msg.message == WM_MOUSEWHEEL){
                 mouseHookMsg = msg;
-                std::cout<<"wParam: "<<(signed int)mouseHookMsg.wParam<<" lParam: "<<(signed int)mouseHookMsg.lParam<<std::endl;
+                std::cout<< "wParam: " << (signed int)mouseHookMsg.wParam
+                    << " lParam: " << (signed int)mouseHookMsg.lParam
+                    <<std::endl;
             }
             TranslateMessage(&msg);
             DispatchMessage(&msg);
@@ -102,36 +117,50 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine,
 
 
 
-LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
+LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam){
+    /*
+        Main function for my hotkey window
+    */
     switch(uMsg){
+        // default destructor
         case(WM_DESTROY):
             PostQuitMessage(0);
             return 0;
+        // default update
         case(WM_PAINT):
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hwnd, &ps);
             FillRect(hdc, &ps.rcPaint, (HBRUSH) (COLOR_WINDOW+1));
             EndPaint(hwnd, &ps);
             return 0;
-
     }
+    // compiler complains that uACToggle wasn't initialized with a constant expression
     //toggles auto clicker as clicking or not clicking
-    if(uMsg == uACToggle){
+    if (uMsg == uACToggle){
         clickingLoop = !clickingLoop;
+        // tmp var to hold thread ID - this is separate from the handle
+        DWORD threadID;
         if(clickingLoop){
-           clickingThread = std::thread(autoClickerProcess,std::ref(clickingLoop));
-           std::cout<<"clicker thread initialized\n";
+            // clickingThread = std::thread(autoClickerProcess,std::ref(clickingLoop));
+            clickingThread = CreateThread(
+                NULL,                // LPSECURITY_ATTRIBUTES lpThreadAttributes
+                0,                   // SIZE_T dwStackSize - use default
+                autoClickerProcess,  // LPTHREAD_START_ROUTINE lpStartAddress
+                (LPVOID)&clickingLoop,       // __drv_aliasesMem LPVOID lpParameter
+                0,                   // DWORD dwCreationFlags
+                &threadID
+            );
+            std::cout<<"clicker thread initialized\n";
         }
         else if (!clickingLoop){
-            clickingThread.join();
+            //clickingThread.join();
+            TerminateThread(clickingThread, 0);
             std::cout<<"clicker thread safely closed"<<std::endl;
         }
 
         std::cout<<"uACToggle message received"<<std::endl;
         return 0;
     }
-
     return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
 
@@ -143,69 +172,50 @@ LRESULT CALLBACK HookProc(int nCode, WPARAM wParam, LPARAM lParam) {
 
     //is 0 if pressed down, 1 if key released
     bool keyUp = hooked_key.flags >> 7;
+    UINT keyDir = keyUp? WM_KEYUP: WM_KEYDOWN;
 
     if(nCode == HC_ACTION) {
         switch(hooked_key.vkCode) {
             case(0x57): //'w' to up arrow 0x26
                 hooked_key.vkCode = 0x26;
                 hooked_key.scanCode = 72;
-                if(!keyUp) {
-                    SendMessage(
-                        GetForegroundWindow(),
-                        WM_KEYDOWN,
-                        hooked_key.vkCode,
-                        hookMsg.lParam
-                    );
-                }
-                else if(keyUp) {
-                    SendMessage(
-                        GetForegroundWindow(),
-                        WM_KEYUP,
-                        hooked_key.vkCode,
-                        hookMsg.lParam
-                    );
-                }
+                SendMessage(
+                    GetForegroundWindow(),
+                    keyDir,
+                    hooked_key.vkCode,
+                    hookMsg.lParam
+                );
                 return 1;
 
             case(0x41): //'a' to left arrow 0x25
                 hooked_key.vkCode = 0x25;
                 hooked_key.scanCode = 75;
-                if(!keyUp) {
-                    SendMessage(
-                        GetForegroundWindow(),
-                        WM_KEYDOWN,
-                        hooked_key.vkCode,
-                        hookMsg.lParam
-                    );
-                }
-                else if(keyUp){
-                    SendMessage(
-                        GetForegroundWindow(),
-                        WM_KEYUP,
-                        hooked_key.vkCode,
-                        hookMsg.lParam
-                    );
-                }
+                SendMessage(
+                    GetForegroundWindow(),
+                    keyDir,
+                    hooked_key.vkCode,
+                    hookMsg.lParam
+                );
                 return 1;
             case(0x53): //'s' to down arrow 0x28
                 hooked_key.vkCode = 0x28;
                 hooked_key.scanCode=80;
-                if(!keyUp)
-                {
-                    SendMessage(GetForegroundWindow(),WM_KEYDOWN,hooked_key.vkCode,hookMsg.lParam);
-                }
-                else if(keyUp)
-                SendMessage(GetForegroundWindow(),WM_KEYUP,hooked_key.vkCode,hookMsg.lParam);
+                SendMessage(
+                    GetForegroundWindow(),
+                    keyDir,
+                    hooked_key.vkCode,
+                    hookMsg.lParam
+                );
                 return 1;
             case(0x44): //'d' to right arrow 0x27
                 hooked_key.vkCode = 0x27;
                 hooked_key.scanCode=77;
-                if(!keyUp)
-                {
-                    SendMessage(GetForegroundWindow(),WM_KEYDOWN,hooked_key.vkCode,hookMsg.lParam);
-                }
-                else if(keyUp)
-                SendMessage(GetForegroundWindow(),WM_KEYUP,hooked_key.vkCode,hookMsg.lParam);
+                SendMessage(
+                    GetForegroundWindow(),
+                    keyDir,
+                    hooked_key.vkCode,
+                    hookMsg.lParam
+                );
                 return 1;
             }
     }
@@ -213,21 +223,18 @@ LRESULT CALLBACK HookProc(int nCode, WPARAM wParam, LPARAM lParam) {
     return CallNextHookEx(NULL, nCode, wParam, lParam);
 }
 
-LRESULT CALLBACK HookProcClick(int nCode, WPARAM wParam, LPARAM lParam)
-{
+LRESULT CALLBACK HookProcClick(int nCode, WPARAM wParam, LPARAM lParam){
     KBDLLHOOKSTRUCT hooked_key = *((KBDLLHOOKSTRUCT*) lParam);
 
     //is 0 if pressed down, 1 if key released
-    bool keyUp= hooked_key.flags>>7;
+    bool keyUp = hooked_key.flags >> 7;
 
-    if(nCode ==HC_ACTION){
+    if(nCode == HC_ACTION){
         switch(hooked_key.vkCode){
-
             case(VK_DOWN):
                 if(!keyUp)
                 {
-                    SendMessage(createdWindow,uACToggle,0,0);
-
+                    SendMessage(createdWindow, uACToggle, 0, 0);
                 }
                 return 1;  //1 to block output, 0 to pass through
             }
@@ -236,19 +243,23 @@ LRESULT CALLBACK HookProcClick(int nCode, WPARAM wParam, LPARAM lParam)
     return CallNextHookEx(NULL, nCode, wParam, lParam);
 }
 
-LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam)
-{
+LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam){
     int ALT = GetAsyncKeyState(VK_MENU);
     HWND activeWindow = GetForegroundWindow();
     MSLLHOOKSTRUCT hooked_mouse = *((MSLLHOOKSTRUCT*) lParam);
-    if(nCode ==HC_ACTION)
-    {
+    if(nCode == HC_ACTION) {
         ALT = GetAsyncKeyState(VK_MENU);
-        if((signed int)hooked_mouse.mouseData>>16 >0  && (ALT&0x8000||ALT&0x0001)) //if the mousewheel was rotated up
-        {
-            SetWindowPos(activeWindow,mouseWindow,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOREDRAW|SWP_NOSENDCHANGING|SWP_DEFERERASE);
+
+        // if the mousewheel was rotated up
+        if((signed int)hooked_mouse.mouseData>>16 >0  && (ALT&0x8000||ALT&0x0001)){
+            // insert the active window under the user's scroll window
+            //SetWindowPos(activeWindow,mouseWindow,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOREDRAW|SWP_NOSENDCHANGING|SWP_DEFERERASE);
+            SetFocus(mouseWindow);
+            // send the scroll message
             SendMessage(mouseWindow,WM_MOUSEWHEEL,7864320,22938243);
-            SetWindowPos(activeWindow,HWND_TOP,0,0,0,0,SWP_NOMOVE | SWP_NOSIZE);
+            // return the active window to the top
+            //SetWindowPos(activeWindow,HWND_TOP,0,0,0,0,SWP_NOMOVE | SWP_NOSIZE);
+            SetFocus(activeWindow);
             return 1;
         }
         else if((signed int)hooked_mouse.mouseData>>16 <0 &&(ALT&0x8000||ALT&0x0001)) //if the mousewheel was rotated down
@@ -264,17 +275,14 @@ LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam)
 }
 
 
-
-
-
-
-void autoClickerProcess(bool& autoClicking)
-{
+DWORD WINAPI autoClickerProcess(LPVOID lpParam){
     wave wavesequence[21];
+
+    bool autoClicking = *(bool*)lpParam;
     while (autoClicking){
         if(autoClicking == false){
             delete[] wavesequence;
-            return;
+            return NULL;
         }
 
         std::cout<<"click variables reset"<<std::endl;
@@ -301,11 +309,11 @@ void autoClickerProcess(bool& autoClicking)
 
          std::cout<<"creating click waves..."<<std::endl;
         for(n=1;n<21;n++){ //create 21 click-waves
-            wavesequence[n].InitWave(n,length,wavesequence[n-1].stopvalue);
+            wavesequence[n].InitWave(n,length,wavesequence[n-1].stopValue);
             printf("Click wave %d created\n",n);
         }
         std::cout<<"click waves created"<<std::endl;
-        totalclicks = wavesequence[n-1].stopclick;
+        totalclicks = wavesequence[n-1].stopClick;
 
             unsigned int cosvalue  = 0;
             unsigned int plusvalue = 0;
@@ -321,7 +329,7 @@ void autoClickerProcess(bool& autoClicking)
             if(autoClicking == false){
                 std::cout<<"Input detected, ending click loop"<<std::endl;
                 delete[] wavesequence;
-                return;
+                return NULL;
             }
 
             holdchance = rand()%100+1;
@@ -329,7 +337,7 @@ void autoClickerProcess(bool& autoClicking)
 
 
             for(n=0;n<21;n++){
-               if(wavesequence[n].stopclick>clicks){
+               if(wavesequence[n].stopClick>clicks){
                 break;
                }
             }
@@ -337,7 +345,7 @@ void autoClickerProcess(bool& autoClicking)
            amplitude   = wavesequence[n].GetAmp();
            midpoint    = wavesequence[n].GetMid();
            period      = wavesequence[n].GetPeriod();
-           startclick  = wavesequence[n].startclick;
+           startclick  = wavesequence[n].startClick;
            cosvalue    = (amplitude*cos(2*3.14159*(1/period)*(clicks-startclick))+midpoint);
 
             if (GetCursorPos(&p)){
@@ -422,6 +430,8 @@ void autoClickerProcess(bool& autoClicking)
         clicks =0;
         //delete[] wavesequence;
     }//end of while (autoClicking)
+    // just to have a return value
+    return NULL;
 }
 
 
