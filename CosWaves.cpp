@@ -28,12 +28,12 @@ void wave::InitWave(unsigned int cycleNumber, unsigned int& l, unsigned int last
 
         Params:
         cycleNumber - the number cycle that this wave makes up in the larger
-            collection.
-        l - The number of total waves in the total collection (length),
+            collection, used to calculate wave direction.
+        l - The number of total clicks in the total collection (length),
             this is a side effect and will be modified!
         lastEndValue - The value of the last click in the wave up to this point
             used to calculate new starting positions.
-        
+
     */
 
     // first wave
@@ -65,7 +65,7 @@ void wave::InitWave(unsigned int cycleNumber, unsigned int& l, unsigned int last
     }
 
     // odd numbered waves start at the bottom with a midpoint above them.
-    else if (cycleNumber%2 ==1) {
+    else if (cycleNumber%2 == 1) {
         direction = false;
 
         stopValue = startValue + (2 * amplitude);
@@ -87,7 +87,7 @@ void wave::InitWave(unsigned int cycleNumber, unsigned int& l, unsigned int last
     }
 
     l += (period / 2);
-    stopClick = startClick+(period/2);
+    stopClick = startClick + (period / 2);
 }
 
 int wave::GetAmp()

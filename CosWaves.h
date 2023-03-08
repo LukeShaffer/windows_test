@@ -4,32 +4,27 @@
 #include <sstream>
 #include <string>
 
-using namespace std;
-
-class wave
-{
-private:
-
-    unsigned int cyclenumber;
-    unsigned int period;
-    int amplitude;
-    unsigned int midpoint;
-    bool direction;//true for up, false for down
+class wave {
+    private:
+        unsigned int cycleNumber;
+        unsigned int period;
+        int amplitude;
+        unsigned int midpoint;
+        bool direction;//true for up, false for down
 
 
-public:
+    public:
+        unsigned int startValue;
+        unsigned int stopValue;
+        void InitWave(unsigned int cycleNumber, unsigned int& l, unsigned int lastEndValue);
+        unsigned int startClick;
+        unsigned int stopClick;
+        int GetPeriod();
+        int GetAmp();
+        int GetMid();
+        bool GetDir();
 
-    unsigned int startvalue;
-    unsigned int stopvalue;
-    void InitWave(unsigned int i, unsigned int&l, unsigned int lastendvalue);
-    unsigned int startclick;
-    unsigned int stopclick;
-    int GetPeriod();
-    int GetAmp();
-    int GetMid();
-    bool GetDir();
-
-    wave();
+        wave();
 };
 
 
