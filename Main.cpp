@@ -12,6 +12,8 @@
 #include "hotkeyHeader.h"
 #include "cosWaves.h"
 
+#define PI 3.141592
+
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 HWND mouseWindow;
@@ -24,10 +26,10 @@ bool clickingLoop = false;
 HANDLE clickingThread;
 
 int WINAPI WinMain(
-    HINSTANCE hInstance,
-    HINSTANCE hPrevInstance,
-    LPSTR pCmdLine,
-    int CmdShow) {
+        HINSTANCE hInstance,
+        HINSTANCE hPrevInstance,
+        LPSTR pCmdLine,
+        int CmdShow) {
 
     srand(time(0));
 
@@ -41,15 +43,15 @@ int WINAPI WinMain(
     RegisterClass(&wc);
 
     createdWindow = CreateWindowEx(
-        WS_EX_CLIENTEDGE,   // dwExStyle
-        CLASS_NAME,         // lpClassName
-        L"Hotkey Window",   // lpWindowName
+        WS_EX_CLIENTEDGE,                               // dwExStyle
+        CLASS_NAME,                                     // lpClassName
+        L"Hotkey Window",                               // lpWindowName
         WS_OVERLAPPEDWINDOW |WS_HSCROLL |WS_VSCROLL,    // dwStyle
-        0,0,250,250,    // x, y, width, height
-        NULL,   // hWndParent
-        NULL,   // hMenu
-        hInstance, // hInstance
-        NULL    // lpParam
+        0,0,250,250,                                    // x, y, width, height
+        NULL,                                           // hWndParent
+        NULL,                                           // hMenu
+        hInstance,                                      // hInstance
+        NULL                                            // lpParam
     );
 
     if(createdWindow == NULL){
@@ -59,6 +61,7 @@ int WINAPI WinMain(
     HINSTANCE hInst = (HINSTANCE)GetWindowLong(createdWindow, GWL_HINSTANCE );
 
     //hotkey section
+    // (hwnd, hotkey_id, fsModifiers, virtual_key)
     RegisterHotKey(createdWindow,1,MOD_ALT|0x4000,VK_UP);        //On top key
     RegisterHotKey(createdWindow,2,MOD_ALT|0x4000,VK_DOWN);      //Not on top
     RegisterHotKey(createdWindow,3,MOD_ALT|0x4000,VK_ADD);       //make window more opaque
@@ -77,12 +80,8 @@ int WINAPI WinMain(
 
     // Custom Windows message that I use to signal autoclicker toggle
     uACToggle = RegisterWindowMessageW(L"ACTOGGLE");
-    //std::default_random_engine generator;
-    //std::normal_distribution<double> distribution(5.0,2.0);
-    //double number = distribution(generator); //how to pick random numbers from the distribution
 
-
-    // disable showing the window
+    // disable showing the window, used for message printing / debugging
     //ShowWindow(createdWindow, CmdShow);
 
     MSG msg = {};
@@ -135,7 +134,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam){
             return 0;
     }
     // compiler complains that uACToggle wasn't initialized with a constant expression
-    //toggles auto clicker as clicking or not clicking
+    // toggles auto clicker as clicking or not clicking
     if (uMsg == uACToggle){
         clickingLoop = !clickingLoop;
         // tmp var to hold thread ID - this is separate from the handle
@@ -146,7 +145,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam){
                 NULL,                // LPSECURITY_ATTRIBUTES lpThreadAttributes
                 0,                   // SIZE_T dwStackSize - use default
                 autoClickerProcess,  // LPTHREAD_START_ROUTINE lpStartAddress
-                (LPVOID)&clickingLoop,       // __drv_aliasesMem LPVOID lpParameter
+                NULL,                // __drv_aliasesMem LPVOID lpParameter
                 0,                   // DWORD dwCreationFlags
                 &threadID
             );
@@ -166,7 +165,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam){
 
 LRESULT CALLBACK HookProc(int nCode, WPARAM wParam, LPARAM lParam) {
     /*
-        The code defining what happens in the windows keyboard hook
+        WASD Hook implementation
     */
     KBDLLHOOKSTRUCT hooked_key = *((KBDLLHOOKSTRUCT*) lParam);
 
@@ -224,6 +223,9 @@ LRESULT CALLBACK HookProc(int nCode, WPARAM wParam, LPARAM lParam) {
 }
 
 LRESULT CALLBACK HookProcClick(int nCode, WPARAM wParam, LPARAM lParam){
+    /*
+        Separate autoclicker toggle hook
+    */
     KBDLLHOOKSTRUCT hooked_key = *((KBDLLHOOKSTRUCT*) lParam);
 
     //is 0 if pressed down, 1 if key released
@@ -262,8 +264,9 @@ LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam){
             SetFocus(activeWindow);
             return 1;
         }
-        else if((signed int)hooked_mouse.mouseData>>16 <0 &&(ALT&0x8000||ALT&0x0001)) //if the mousewheel was rotated down
-        {
+
+        // mousewheel was rotated down
+        else if((signed int)hooked_mouse.mouseData>>16 <0 &&(ALT&0x8000||ALT&0x0001)) {
             SetWindowPos(activeWindow,mouseWindow,0,0,0,0,SWP_NOMOVE | SWP_NOSIZE|SWP_NOREDRAW|SWP_NOSENDCHANGING|SWP_DEFERERASE);
             SendMessage(mouseWindow,WM_MOUSEWHEEL,-7864320,22938243);
             SetWindowPos(activeWindow,HWND_TOP,0,0,0,0,SWP_NOMOVE | SWP_NOSIZE);
@@ -276,161 +279,127 @@ LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam){
 
 
 DWORD WINAPI autoClickerProcess(LPVOID lpParam){
-    wave wavesequence[21];
+    wave waveSequence[21];
 
-    bool autoClicking = *(bool*)lpParam;
-    while (autoClicking){
-        if(autoClicking == false){
-            delete[] wavesequence;
-            return NULL;
-        }
-
+    // bool autoClicking = *(bool*)lpParam;
+    while (true){
         std::cout<<"click variables reset"<<std::endl;
-        unsigned int totalclicks =0;
-        unsigned int clicks = 0;
+        unsigned int currentClick   = 0;
 
-        int holdchance      = 0;
-        int movechance      = 0;
-        int movedirection   = 0;
+        int holdChance              = 0,
+            moveChance              = 0,
+            moveDirection           = 0;
 
-        int xpos            = 0,
-            ypos            = 0;
+        int xpos                    = 0,
+            ypos                    = 0;
         POINT p;
 
-        unsigned int n      = 0;
-        unsigned int length = 0;
+        unsigned int length         = 0;
 
-        n =0;
-        length = 0;
-
-        wavesequence[21] = {};
-        wavesequence[0].InitWave(n,length,0);
+        waveSequence[21] = {};
+        waveSequence[0].InitWave(0, length, 0);
 
 
-         std::cout<<"creating click waves..."<<std::endl;
-        for(n=1;n<21;n++){ //create 21 click-waves
-            wavesequence[n].InitWave(n,length,wavesequence[n-1].stopValue);
-            printf("Click wave %d created\n",n);
+        std::cout << "creating click waves..." << std::endl;
+        for(int n=1; n<21; n++){ //create 21 click-waves
+            waveSequence[n].InitWave(n, length, waveSequence[n-1].stopValue);
+            printf("Click wave %d created\n", n);
         }
-        std::cout<<"click waves created"<<std::endl;
-        totalclicks = wavesequence[n-1].stopClick;
-
-            unsigned int cosvalue  = 0;
-            unsigned int plusvalue = 0;
-            int amplitude          = 0;
-            unsigned int midpoint  = 0;
-            unsigned int period    = 0;
-            int startclick         = 0;
-            wave activewave;
+        std::cout<< "click waves created" << std::endl;
+        unsigned int cosvalue   = 0,
+                     plusvalue  = 0,
+                     midpoint   = 0,
+                     period     = 0,
+                     startClick = 0;
+        int amplitude           = 0;
+        wave activeWave;
 
         std::cout<<"starting click loop..."<<std::endl;
-        while(clicks<totalclicks) //do the clicks
-        {
-            if(autoClicking == false){
-                std::cout<<"Input detected, ending click loop"<<std::endl;
-                delete[] wavesequence;
-                return NULL;
-            }
+        // do the clicks
+        for (int n=0; n<21; n++){
+            activeWave = waveSequence[n];
 
-            holdchance = rand()%100+1;
-            movechance = rand()%300+1;
+            amplitude   = activeWave.GetAmp();
+            midpoint    = activeWave.GetMid();
+            period      = activeWave.GetPeriod();
+            startClick  = activeWave.startClick;
 
+            currentClick = startClick;
+            while (currentClick < activeWave.stopClick) {
+                // The base wait time for out current click
+                cosvalue =
+                    amplitude *
+                    cos(2 * PI * (1 / period) * (currentClick - startClick))
+                    + midpoint;
+                
+                // chance to ignore cosValue and wait for a long time 
+                holdChance = rand() % 100 + 1;
 
-            for(n=0;n<21;n++){
-               if(wavesequence[n].stopClick>clicks){
-                break;
-               }
-            }
+                // chance to jiggle cursor
+                moveChance = rand() % 300 + 1;
 
-           amplitude   = wavesequence[n].GetAmp();
-           midpoint    = wavesequence[n].GetMid();
-           period      = wavesequence[n].GetPeriod();
-           startclick  = wavesequence[n].startClick;
-           cosvalue    = (amplitude*cos(2*3.14159*(1/period)*(clicks-startclick))+midpoint);
-
-            if (GetCursorPos(&p)){
-                xpos = p.x;
-                ypos = p.y;
-            }
-            if (movechance<=1){
-                movedirection = rand()%8;
-
-
-                switch(movedirection){
-                    case(0):{   //move left
-                        xpos-=rand()%3+1;
-                        break;
-                    }
-                    case(1):{ //move right
-                        xpos+=rand()%3+1;
-                        break;
-                    }
-                    case(2):{  // move up
-                        ypos-= rand()%3+1;
-                        break;
-                    }
-                    case(3):{ //move down
-                        ypos+=rand()%3+1;
-                        break;
-                    }
-                    case(4):{  //move up-left
-                        xpos-=rand()%3+1;
-                        ypos-=rand()%3+1;
-                        break;
-                    }
-                    case(5):{ //move up-right
-                        xpos+=rand()%3+1;
-                        ypos-=rand()%3+1;
-                        break;
-                    }
-                    case(6):{ //move down-right
-                        xpos+=rand()%3+1;
-                        ypos+=rand()%3+1;
-                        break;
-                    }
-                    case(7):{ //move down-left
-                        xpos-=rand()%3+1;
-                        ypos+=rand()%3+1;
-                        break;
-                    }
+                // returns position of cursor in screen coords
+                if (GetCursorPos(&p)){
+                    xpos = p.x;
+                    ypos = p.y;
                 }
 
-            }
-            SetCursorPos(xpos,ypos);
+                if (moveChance <= 1){
+                    // specific value does not mean anything, just equally
+                    // weighted 0-7
+                    moveDirection = rand() % 8;
 
+                    // screen origin is TOP LEFT PIXEL, so smaller y is higher
+                    int xChange = rand() % 3 + 1;
+                    int yChange = rand() % 3 + 1;
 
-            if (holdchance<=98){ //regular click
-                plusvalue  = rand()%2; //chance to be above or below cosine value
-                mouse_event(MOUSEEVENTF_LEFTDOWN,xpos,ypos,0,0);
-                Sleep(rand()%10+1);
-                mouse_event(MOUSEEVENTF_LEFTUP,xpos,ypos,0,0);
+                    // adjust xChanges
+                    if (moveDirection < 3){
+                        xChange = -xChange;
+                    }
+                    else if (moveDirection == 3 || moveDirection == 7){
+                        xChange = 0;
+                    }
 
-                if(plusvalue   ==1){
-                Sleep( cosvalue+rand()%25);
+                    // adjust yChanges
+                    if (moveDirection > 1 && moveDirection < 5) {
+                        yChange = -yChange;
+                    }
+                    else if (moveDirection == 1 || moveDirection == 5){
+                        yChange = 0;
+                    }
+                    xpos += xChange;
+                    ypos += yChange;
+                    SetCursorPos(xpos, ypos);
                 }
 
-                if(plusvalue==0){
-                    Sleep(cosvalue-rand()%75);
+                //regular click
+                if (holdChance <= 98){
+                    //chance to be above or below cosine value
+                    plusvalue = rand() % 2; 
+
+                    mouse_event(MOUSEEVENTF_LEFTDOWN, xpos, ypos, 0, 0);
+                    Sleep(rand() % 10 + 1);  // hold mouse left for some time
+                    mouse_event(MOUSEEVENTF_LEFTUP, xpos, ypos, 0, 0);
+
+                    // bias click values to be mostly below my calculated vals
+                    if(plusvalue == 1) Sleep(cosvalue + rand() % 25);
+                    else if(plusvalue == 0) Sleep(cosvalue - rand() % 75);
+                    //((rand()%150*(rand()%2*(-1)))+420);
                 }
-                //((rand()%150*(rand()%2*(-1)))+420);
-                clicks++;
-            }
-
-
-            else if (holdchance>98){//delayed click
-                mouse_event(MOUSEEVENTF_LEFTDOWN,xpos,ypos,0,0);
-                Sleep(rand()%10+1);
-                mouse_event(MOUSEEVENTF_LEFTUP,xpos,ypos,0,0);
-                Sleep(rand()%50+600);
-                clicks++;
-            }
-
-        }// end while (clicks < totalClicks)
+                //delayed click
+                else if (holdChance > 98){
+                    mouse_event(MOUSEEVENTF_LEFTDOWN, xpos, ypos, 0, 0);
+                    Sleep(rand() % 10 + 1);
+                    mouse_event(MOUSEEVENTF_LEFTUP, xpos, ypos, 0, 0);
+                    Sleep(rand() % 50 + 600);
+                }
+                currentClick++;
+            }// end while (currentClick > totalClicks)
+        }
         std::cout<<"click loop ended"<<std::endl;
-        clicks =0;
-        //delete[] wavesequence;
-    }//end of while (autoClicking)
-    // just to have a return value
+        //delete[] waveSequence;
+    }
     return NULL;
 }
 
